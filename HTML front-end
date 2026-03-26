@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>StockSense — Inventory Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── RESET & TOKENS ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #0a0c10;
+  --surface:   #111318;
+  --surface2:  #1a1e27;
+  --border:    #252a35;
+  --accent:    #5b8af5;
+  --accent2:   #8b5cf6;
+  --green:     #34d399;
+  --yellow:    #fbbf24;
+  --red:       #f87171;
+  --text:      #e8ecf4;
+  --muted:     #6b7591;
+  --font-head: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --radius:    10px;
+  --transition: 0.18s ease;
+}
+html { font-size: 15px; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; overflow-x: hidden; }
+
+/* ── LAYOUT ── */
+.shell  { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.sidebar{ background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 0; position: sticky; top: 0; height: 100vh; }
+.main   { padding: 36px 40px; overflow-y: auto; }
+
+/* ── SIDEBAR ── */
+.logo { padding: 28px 24px 20px; border-bottom: 1px solid var(--border); }
+.logo-mark { font-family: var(--font-head); font-size: 1.35rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px; }
+.logo-sub  { font-size: 0.65rem; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius); cursor: pointer; color: var(--muted); font-size: 0.82rem; letter-spacing: 0.3px; transition: var(--transition); border: none; background: none; width: 100%; text-align: left; font-family: var(--font-mono); }
+.nav-item svg { flex-shrink: 0; }
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active { background: rgba(91,138,245,0.12); color: var(--accent); }
+.nav-badge { margin-left: auto; background: var(--red); color: #fff; font-size: 0.65rem; padding: 1px 7px; border-radius: 99px; font-family: var(--font-mono); min-width: 20px; text-align: center; display: none; }
+.nav-badge.show { display: block; }
+
+.sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+.server-status { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+.dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+/* ── PAGE HEADER ── */
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; gap: 16px; }
+.page-title  { font-family: var(--font-head); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.5px; }
+.page-sub    { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+/* ── BUTTONS ── */
+.btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: var(--radius); font-family: var(--font-mono); font-size: 0.8rem; cursor: pointer; border: none; transition: var(--transition); font-weight: 500; letter-spacing: 0.3px; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4a7ae0; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(91,138,245,.3); }
+.btn-ghost  { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+.btn-danger:hover { background: rgba(248,113,113,.22); }
+.btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+
+/* ── STAT CARDS ── */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; position: relative; overflow: hidden; transition: var(--transition); }
+.stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--card-accent, var(--accent)), transparent); }
+.stat-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+.stat-value { font-family: var(--font-head); font-size: 2rem; font-weight: 800; }
+.stat-sub   { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+.stat-icon  { position: absolute; right: 18px; top: 18px; opacity: 0.12; }
+
+/* ── SEARCH / FILTER BAR ── */
+.toolbar { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; flex-wrap: wrap; }
+.search-wrap { position: relative; flex: 1; min-width: 220px; }
+.search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search-input { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px 12px 9px 36px; border-radius: var(--radius); font-family: var(--font-mono); font-size: 0.82rem; outline: none; transition: var(--transition); }
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--muted); }
+.filter-select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: var(--radius); font-family: var(--font-mono); font-size: 0.82rem; outline: none; cursor: pointer; }
+.filter-select:focus { border-color: var(--accent); }
+
+/* ── TABLE ── */
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: var(--surface2); }
+th { padding: 12px 16px; text-align: left; font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 500; white-space: nowrap; }
+td { padding: 13px 16px; font-size: 0.8rem; border-top: 1px solid var(--border); vertical-align: middle; }
+tr:hover td { background: rgba(255,255,255,.02); }
+.sku-tag { background: var(--surface2); border: 1px solid var(--border); padding: 2px 8px; border-radius: 5px; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.5px; }
+.cat-badge { padding: 3px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 500; }
+.stock-ok  { background: rgba(52,211,153,.1); color: var(--green); }
+.stock-low { background: rgba(251,191,36,.1);  color: var(--yellow); }
+.stock-critical { background: rgba(248,113,113,.1); color: var(--red); }
+.qty-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 8px; font-weight: 500; }
+.actions   { display: flex; gap: 8px; }
+
+/* ── ALERT BANNER ── */
+.alert-bar { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.25); border-radius: var(--radius); padding: 12px 18px; display: flex; align-items: center; gap: 12px; margin-bottom: 24px; font-size: 0.8rem; animation: fadeIn .4s ease; }
+.alert-bar svg { color: var(--yellow); flex-shrink: 0; }
+
+/* ── ALERT LIST PAGE ── */
+.alert-item { background: var(--surface); border: 1px solid rgba(248,113,113,.2); border-left: 3px solid var(--red); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; animation: slideIn .3s ease; }
+.alert-item.warn { border-color: rgba(251,191,36,.3); border-left-color: var(--yellow); }
+.alert-name { font-family: var(--font-head); font-size: 0.95rem; font-weight: 700; }
+.alert-meta { color: var(--muted); font-size: 0.75rem; margin-top: 3px; }
+
+/* ── MODAL ── */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.overlay.open { opacity: 1; pointer-events: all; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; transform: translateY(20px) scale(.97); transition: transform .25s ease; }
+.overlay.open .modal { transform: translateY(0) scale(1); }
+.modal-title { font-family: var(--font-head); font-size: 1.35rem; font-weight: 800; margin-bottom: 24px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid .full { grid-column: 1/-1; }
+label { display: block; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+input, select, textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 13px; border-radius: var(--radius); font-family: var(--font-mono); font-size: 0.82rem; outline: none; transition: var(--transition); }
+input:focus, select:focus { border-color: var(--accent); }
+select option { background: var(--surface2); }
+.modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+
+/* ── SUPPLIER TABLE ── */
+.sup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; transition: var(--transition); }
+.sup-card:hover { border-color: var(--accent); }
+.sup-name { font-family: var(--font-head); font-size: 1rem; font-weight: 700; }
+.sup-info { color: var(--muted); font-size: 0.75rem; margin-top: 4px; display: flex; gap: 16px; }
+
+/* ── EMPTY STATE ── */
+.empty { text-align: center; padding: 64px 24px; color: var(--muted); }
+.empty svg { opacity: .2; margin-bottom: 16px; }
+
+/* ── TOAST ── */
+.toast-container { position: fixed; bottom: 28px; right: 28px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+.toast { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--green); padding: 12px 18px; border-radius: var(--radius); font-size: 0.8rem; animation: slideIn .3s ease; box-shadow: 0 12px 40px rgba(0,0,0,.4); min-width: 220px; }
+.toast.error { border-left-color: var(--red); }
+.toast.warn  { border-left-color: var(--yellow); }
+
+/* ── PAGES ── */
+.page { display: none; }
+.page.active { display: block; animation: fadeIn .3s ease; }
+
+/* ── ANIMATIONS ── */
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ── MISC ── */
+.pill { padding: 2px 10px; border-radius: 99px; font-size: 0.72rem; font-weight: 500; }
+.pill-blue { background: rgba(91,138,245,.12); color: var(--accent); }
+.chip { display: inline-flex; align-items: center; gap: 5px; }
+.divider { height: 1px; background: var(--border); margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── SIDEBAR ── -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">StockSense</div>
+    <div class="logo-sub">Inventory Manager</div>
+  </div>
+  <nav>
+    <button class="nav-item active" onclick="showPage('dashboard')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-item" onclick="showPage('products')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      Products
+    </button>
+    <button class="nav-item" onclick="showPage('suppliers')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Suppliers
+    </button>
+    <button class="nav-item" onclick="showPage('alerts')" id="nav-alerts">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Alerts
+      <span class="nav-badge" id="alert-badge">0</span>
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="server-status">
+      <div class="dot" id="server-dot"></div>
+      <span id="server-label">Connecting…</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ── MAIN ── -->
+<main class="main">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">Real-time inventory overview</div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddProduct()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Product
+      </button>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card" style="--card-accent:var(--accent)">
+        <div class="stat-label">Total Products</div>
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-sub">SKUs tracked</div>
+        <svg class="stat-icon" width="52" height="52" viewBox="0 0 24 24" fill="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      </div>
+      <div class="stat-card" style="--card-accent:var(--green)">
+        <div class="stat-label">Total Stock</div>
+        <div class="stat-value" id="stat-stock">—</div>
+        <div class="stat-sub">Units on hand</div>
+        <svg class="stat-icon" width="52" height="52" viewBox="0 0 24 24" fill="currentColor"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      </div>
+      <div class="stat-card" style="--card-accent:var(--yellow)">
+        <div class="stat-label">Low Stock</div>
+        <div class="stat-value" id="stat-low">—</div>
+        <div class="stat-sub">Need restocking</div>
+        <svg class="stat-icon" width="52" height="52" viewBox="0 0 24 24" fill="currentColor"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+      </div>
+      <div class="stat-card" style="--card-accent:var(--accent2)">
+        <div class="stat-label">Suppliers</div>
+        <div class="stat-value" id="stat-suppliers">—</div>
+        <div class="stat-sub">Active vendors</div>
+        <svg class="stat-icon" width="52" height="52" viewBox="0 0 24 24" fill="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      </div>
+    </div>
+    <div id="dash-alert-bar" style="display:none" class="alert-bar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span id="dash-alert-text"></span>
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="showPage('alerts')">View Alerts →</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Product</th><th>Category</th><th>SKU</th><th>Stock</th><th>Status</th><th>Price</th>
+        </tr></thead>
+        <tbody id="dash-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PRODUCTS -->
+  <div class="page" id="page-products">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Products</div>
+        <div class="page-sub">Manage your inventory items</div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddProduct()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Product
+      </button>
+    </div>
+    <div class="toolbar">
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="search-input" id="product-search" placeholder="Search products…" oninput="renderProducts()"/>
+      </div>
+      <select class="filter-select" id="cat-filter" onchange="renderProducts()">
+        <option value="">All Categories</option>
+      </select>
+      <select class="filter-select" id="stock-filter" onchange="renderProducts()">
+        <option value="">All Stock Levels</option>
+        <option value="low">Low Stock</option>
+        <option value="ok">In Stock</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Product</th><th>Category</th><th>SKU</th><th>Supplier</th><th>Qty</th><th>Threshold</th><th>Price</th><th>Updated</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="products-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SUPPLIERS -->
+  <div class="page" id="page-suppliers">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Vendor directory</div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddSupplier()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Supplier
+      </button>
+    </div>
+    <div id="suppliers-list"></div>
+  </div>
+
+  <!-- ALERTS -->
+  <div class="page" id="page-alerts">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Stock Alerts</div>
+        <div class="page-sub">Items needing attention</div>
+      </div>
+    </div>
+    <div id="alerts-list"></div>
+  </div>
+
+</main>
+</div>
+
+<!-- ── PRODUCT MODAL ── -->
+<div class="overlay" id="product-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-product-title">Add Product</div>
+    <div class="form-grid">
+      <div class="full"><label>Product Name</label><input id="f-name" placeholder="e.g. Wireless Mouse"/></div>
+      <div><label>Category</label>
+        <select id="f-category">
+          <option>Electronics</option><option>Furniture</option><option>Accessories</option>
+          <option>Office Supplies</option><option>Tools</option><option>Other</option>
+        </select>
+      </div>
+      <div><label>SKU</label><input id="f-sku" placeholder="e.g. WM-007"/></div>
+      <div><label>Quantity</label><input id="f-qty" type="number" min="0" placeholder="0"/></div>
+      <div><label>Low Stock Threshold</label><input id="f-threshold" type="number" min="0" placeholder="5"/></div>
+      <div><label>Price ($)</label><input id="f-price" type="number" step="0.01" min="0" placeholder="0.00"/></div>
+      <div class="full"><label>Supplier</label><select id="f-supplier"></select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-product-btn" onclick="saveProduct()">Save Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SUPPLIER MODAL ── -->
+<div class="overlay" id="supplier-modal">
+  <div class="modal">
+    <div class="modal-title">Add Supplier</div>
+    <div class="form-grid">
+      <div class="full"><label>Company Name</label><input id="s-name" placeholder="e.g. TechSupply Co"/></div>
+      <div><label>Contact</label><input id="s-contact" placeholder="+1-800-555-0100"/></div>
+      <div><label>Email</label><input id="s-email" placeholder="orders@supplier.com"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('supplier-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSupplier()">Save Supplier</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+const API = 'http://localhost:8080/api';
+let products = [], suppliers = [], editingId = null;
+
+// ── SERVER PING ──
+async function pingServer() {
+  try {
+    const r = await fetch(API + '/products', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) {
+      document.getElementById('server-dot').className = 'dot online';
+      document.getElementById('server-label').textContent = 'Backend online';
+    }
+  } catch {
+    document.getElementById('server-dot').className = 'dot';
+    document.getElementById('server-label').textContent = 'Backend offline';
+  }
+}
+
+// ── FETCH ──
+async function loadData() {
+  try {
+    const [p, s] = await Promise.all([
+      fetch(API + '/products').then(r => r.json()),
+      fetch(API + '/suppliers').then(r => r.json())
+    ]);
+    products = p; suppliers = s;
+    renderAll();
+  } catch {
+    // backend offline – use local data
+    renderAll();
+  }
+}
+
+function renderAll() {
+  renderStats();
+  renderDashTable();
+  renderProducts();
+  renderSuppliers();
+  renderAlerts();
+  updateAlertBadge();
+  populateSupplierDropdown();
+  populateCategoryFilter();
+}
+
+// ── STATS ──
+function renderStats() {
+  document.getElementById('stat-total').textContent = products.length;
+  document.getElementById('stat-stock').textContent = products.reduce((a,p)=>a+p.quantity,0);
+  const low = products.filter(p=>p.low_stock).length;
+  document.getElementById('stat-low').textContent = low;
+  document.getElementById('stat-suppliers').textContent = suppliers.length;
+
+  const bar = document.getElementById('dash-alert-bar');
+  if (low > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('dash-alert-text').textContent =
+      `${low} product${low>1?'s':''} ${low>1?'are':'is'} below reorder threshold — attention required.`;
+  } else bar.style.display = 'none';
+}
+
+function updateAlertBadge() {
+  const n = products.filter(p=>p.low_stock).length;
+  const badge = document.getElementById('alert-badge');
+  badge.textContent = n;
+  badge.classList.toggle('show', n > 0);
+}
+
+// ── DASH TABLE ──
+function renderDashTable() {
+  const tbody = document.getElementById('dash-table');
+  const list = [...products].sort((a,b)=>a.quantity-b.quantity).slice(0,8);
+  tbody.innerHTML = list.length ? list.map(p=>rowDash(p)).join('') :
+    '<tr><td colspan="6"><div class="empty">No products yet.</div></td></tr>';
+}
+function rowDash(p) {
+  const sup = suppliers.find(s=>s.id===p.supplier_id);
+  const status = p.quantity === 0 ? ['Critical','stock-critical'] :
+                 p.low_stock   ? ['Low Stock','stock-low'] : ['In Stock','stock-ok'];
+  return `<tr>
+    <td><strong>${esc(p.name)}</strong></td>
+    <td><span class="cat-badge pill-blue">${esc(p.category)}</span></td>
+    <td><span class="sku-tag">${esc(p.sku)}</span></td>
+    <td><span class="qty-badge ${p.low_stock?'stock-low':''}">${p.quantity}</span></td>
+    <td><span class="cat-badge ${status[1]}">${status[0]}</span></td>
+    <td>$${p.price.toFixed(2)}</td>
+  </tr>`;
+}
+
+// ── PRODUCTS TABLE ──
+function renderProducts() {
+  const q   = document.getElementById('product-search').value.toLowerCase();
+  const cat = document.getElementById('cat-filter').value;
+  const stk = document.getElementById('stock-filter').value;
+  let list = products.filter(p=>{
+    if (q && !p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q) && !p.category.toLowerCase().includes(q)) return false;
+    if (cat && p.category !== cat) return false;
+    if (stk === 'low' && !p.low_stock) return false;
+    if (stk === 'ok'  &&  p.low_stock) return false;
+    return true;
+  });
+  const tbody = document.getElementById('products-table');
+  tbody.innerHTML = list.length ? list.map(p=>rowProduct(p)).join('') :
+    '<tr><td colspan="9"><div class="empty">No products match your filters.</div></td></tr>';
+}
+function rowProduct(p) {
+  const sup = suppliers.find(s=>s.id===p.supplier_id);
+  const cls = p.quantity === 0 ? 'stock-critical' : p.low_stock ? 'stock-low' : 'stock-ok';
+  return `<tr>
+    <td><strong>${esc(p.name)}</strong></td>
+    <td><span class="cat-badge pill-blue">${esc(p.category)}</span></td>
+    <td><span class="sku-tag">${esc(p.sku)}</span></td>
+    <td>${sup?esc(sup.name):'<span style="color:var(--muted)">Unknown</span>'}</td>
+    <td><span class="qty-badge ${cls}">${p.quantity}</span></td>
+    <td style="color:var(--muted)">${p.low_stock_threshold}</td>
+    <td>$${p.price.toFixed(2)}</td>
+    <td style="color:var(--muted);font-size:.72rem">${p.last_updated.slice(0,10)}</td>
+    <td><div class="actions">
+      <button class="btn btn-sm btn-ghost" onclick="openEditProduct(${p.id})">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id})">Del</button>
+    </div></td>
+  </tr>`;
+}
+
+// ── SUPPLIERS ──
+function renderSuppliers() {
+  const el = document.getElementById('suppliers-list');
+  if (!suppliers.length) { el.innerHTML = '<div class="empty">No suppliers yet.</div>'; return; }
+  const productCount = id => products.filter(p=>p.supplier_id===id).length;
+  el.innerHTML = suppliers.map(s=>`
+    <div class="sup-card">
+      <div>
+        <div class="sup-name">${esc(s.name)}</div>
+        <div class="sup-info">
+          <span>📞 ${esc(s.contact)}</span>
+          <span>✉️ ${esc(s.email)}</span>
+          <span class="pill pill-blue">${productCount(s.id)} products</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+// ── ALERTS ──
+function renderAlerts() {
+  const el = document.getElementById('alerts-list');
+  const alerts = products.filter(p=>p.low_stock);
+  if (!alerts.length) {
+    el.innerHTML = `<div class="empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div style="font-family:var(--font-head);font-size:1.1rem;font-weight:700">All Stock Levels Healthy</div>
+      <div style="margin-top:6px;font-size:.8rem">No products are below their reorder threshold.</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = alerts.map(p=>{
+    const cls = p.quantity === 0 ? '' : 'warn';
+    const sup = suppliers.find(s=>s.id===p.supplier_id);
+    return `<div class="alert-item ${cls}">
+      <div>
+        <div class="alert-name">${esc(p.name)}</div>
+        <div class="alert-meta">SKU: ${esc(p.sku)} · ${sup?esc(sup.name):'Unknown supplier'} · Threshold: ${p.low_stock_threshold}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="text-align:right">
+          <div style="font-family:var(--font-head);font-size:1.4rem;font-weight:800;color:${p.quantity===0?'var(--red)':'var(--yellow)'}">${p.quantity}</div>
+          <div style="font-size:.7rem;color:var(--muted)">units left</div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="openEditProduct(${p.id})">Restock</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── MODALS ──
+function openAddProduct() {
+  editingId = null;
+  document.getElementById('modal-product-title').textContent = 'Add Product';
+  document.getElementById('save-product-btn').textContent = 'Save Product';
+  ['f-name','f-sku','f-qty','f-threshold','f-price'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-category').value = 'Electronics';
+  populateSupplierDropdown();
+  openModal('product-modal');
+}
+function openEditProduct(id) {
+  const p = products.find(x=>x.id===id); if(!p) return;
+  editingId = id;
+  document.getElementById('modal-product-title').textContent = 'Edit Product';
+  document.getElementById('save-product-btn').textContent = 'Update Product';
+  document.getElementById('f-name').value      = p.name;
+  document.getElementById('f-sku').value       = p.sku;
+  document.getElementById('f-qty').value       = p.quantity;
+  document.getElementById('f-threshold').value = p.low_stock_threshold;
+  document.getElementById('f-price').value     = p.price;
+  document.getElementById('f-category').value  = p.category;
+  populateSupplierDropdown(p.supplier_id);
+  openModal('product-modal');
+}
+function openAddSupplier() { openModal('supplier-modal'); }
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function populateSupplierDropdown(selected) {
+  const sel = document.getElementById('f-supplier');
+  sel.innerHTML = suppliers.map(s=>`<option value="${s.id}" ${s.id===selected?'selected':''}>${esc(s.name)}</option>`).join('');
+}
+function populateCategoryFilter() {
+  const cats = [...new Set(products.map(p=>p.category))].sort();
+  const sel = document.getElementById('cat-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>' +
+    cats.map(c=>`<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+
+// ── CRUD ──
+async function saveProduct() {
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    category: document.getElementById('f-category').value,
+    sku: document.getElementById('f-sku').value.trim(),
+    quantity: parseInt(document.getElementById('f-qty').value)||0,
+    low_stock_threshold: parseInt(document.getElementById('f-threshold').value)||5,
+    price: parseFloat(document.getElementById('f-price').value)||0,
+    supplier_id: parseInt(document.getElementById('f-supplier').value)||0
+  };
+  if (!body.name) { toast('Product name is required','error'); return; }
+  try {
+    let r;
+    if (editingId) {
+      r = await fetch(`${API}/products/${editingId}`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    } else {
+      r = await fetch(`${API}/products`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }
+    const updated = await r.json();
+    if (editingId) {
+      products = products.map(p=>p.id===editingId?updated:p);
+      toast('Product updated');
+    } else {
+      products.push(updated);
+      toast('Product added');
+    }
+    closeModal('product-modal');
+    renderAll();
+  } catch {
+    // offline: update local
+    if (editingId) {
+      products = products.map(p=>p.id===editingId?{...p,...body,low_stock:body.quantity<=body.low_stock_threshold}:p);
+      toast('Updated locally (backend offline)','warn');
+    } else {
+      const np = {...body,id:Date.now(),last_updated:new Date().toISOString().slice(0,19).replace('T',' '),low_stock:body.quantity<=body.low_stock_threshold};
+      products.push(np);
+      toast('Added locally (backend offline)','warn');
+    }
+    closeModal('product-modal');
+    renderAll();
+  }
+}
+
+async function deleteProduct(id) {
+  if (!confirm('Delete this product?')) return;
+  try {
+    await fetch(`${API}/products/${id}`, {method:'DELETE'});
+  } catch {}
+  products = products.filter(p=>p.id!==id);
+  toast('Product deleted','error');
+  renderAll();
+}
+
+async function saveSupplier() {
+  const body = {
+    name: document.getElementById('s-name').value.trim(),
+    contact: document.getElementById('s-contact').value.trim(),
+    email: document.getElementById('s-email').value.trim()
+  };
+  if (!body.name) { toast('Supplier name required','error'); return; }
+  try {
+    const r = await fetch(`${API}/suppliers`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const ns = await r.json();
+    suppliers.push(ns);
+  } catch {
+    suppliers.push({...body,id:Date.now()});
+    toast('Added locally (backend offline)','warn');
+  }
+  closeModal('supplier-modal');
+  renderAll();
+  toast('Supplier added');
+}
+
+// ── NAVIGATION ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── TOAST ──
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  const c = document.getElementById('toasts');
+  c.appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+function esc(s='') {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── INIT ──
+pingServer();
+loadData();
+setInterval(pingServer, 10000);
+
+// Close modals on overlay click
+document.querySelectorAll('.overlay').forEach(el=>{
+  el.addEventListener('click', e=>{ if(e.target===el) el.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
