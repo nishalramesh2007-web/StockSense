@@ -1,0 +1,358 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <sstream>
+#include <fstream>
+#include <algorithm>
+#include <ctime>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <cstring>
+#include <thread>
+#include <mutex>
+
+// ─────────────────────────────────────────────
+//  Data Models
+// ─────────────────────────────────────────────
+
+struct Supplier {
+    int id;
+    std::string name;
+    std::string contact;
+    std::string email;
+};
+
+struct Product {
+    int id;
+    std::string name;
+    std::string category;
+    int quantity;
+    int low_stock_threshold;
+    double price;
+    int supplier_id;
+    std::string sku;
+    std::string last_updated;
+};
+
+// ─────────────────────────────────────────────
+//  In-Memory Store
+// ─────────────────────────────────────────────
+
+std::mutex store_mutex;
+std::map<int, Product>  products;
+std::map<int, Supplier> suppliers;
+int next_product_id  = 1;
+int next_supplier_id = 1;
+
+std::string current_timestamp() {
+    time_t now = time(nullptr);
+    char buf[20];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    return std::string(buf);
+}
+
+// ─────────────────────────────────────────────
+//  JSON helpers  (no external lib)
+// ─────────────────────────────────────────────
+
+std::string escape_json(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if      (c == '"')  out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else                out += c;
+    }
+    return out;
+}
+
+std::string supplier_to_json(const Supplier& s) {
+    return "{\"id\":" + std::to_string(s.id) +
+           ",\"name\":\"" + escape_json(s.name) + "\"" +
+           ",\"contact\":\"" + escape_json(s.contact) + "\"" +
+           ",\"email\":\"" + escape_json(s.email) + "\"}";
+}
+
+std::string product_to_json(const Product& p) {
+    return "{\"id\":" + std::to_string(p.id) +
+           ",\"name\":\"" + escape_json(p.name) + "\"" +
+           ",\"category\":\"" + escape_json(p.category) + "\"" +
+           ",\"quantity\":" + std::to_string(p.quantity) +
+           ",\"low_stock_threshold\":" + std::to_string(p.low_stock_threshold) +
+           ",\"price\":" + std::to_string(p.price) +
+           ",\"supplier_id\":" + std::to_string(p.supplier_id) +
+           ",\"sku\":\"" + escape_json(p.sku) + "\"" +
+           ",\"last_updated\":\"" + escape_json(p.last_updated) + "\"" +
+           ",\"low_stock\":" + (p.quantity <= p.low_stock_threshold ? "true" : "false") +
+           "}";
+}
+
+// Tiny JSON field extractor
+std::string json_get(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\":";
+    auto pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && json[pos] == ' ') pos++;
+    if (json[pos] == '"') {
+        pos++;
+        std::string val;
+        while (pos < json.size() && json[pos] != '"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) { pos++; }
+            val += json[pos++];
+        }
+        return val;
+    } else {
+        std::string val;
+        while (pos < json.size() && json[pos] != ',' && json[pos] != '}') {
+            val += json[pos++];
+        }
+        return val;
+    }
+}
+
+// ─────────────────────────────────────────────
+//  Seed data
+// ─────────────────────────────────────────────
+
+void seed_data() {
+    Supplier s1{1, "TechSupply Co",   "+1-800-555-0101", "orders@techsupply.com"};
+    Supplier s2{2, "GlobalParts Ltd", "+1-800-555-0202", "sales@globalparts.com"};
+    Supplier s3{3, "QuickShip Inc",   "+1-800-555-0303", "info@quickship.com"};
+    suppliers[1] = s1; suppliers[2] = s2; suppliers[3] = s3;
+    next_supplier_id = 4;
+
+    auto ts = current_timestamp();
+    products[1] = {1, "Wireless Keyboard", "Electronics", 45, 10, 29.99, 1, "WK-001", ts};
+    products[2] = {2, "USB-C Hub",         "Electronics",  8, 15, 49.99, 1, "UC-002", ts};
+    products[3] = {3, "Ergonomic Chair",   "Furniture",   12,  5,199.99, 2, "EC-003", ts};
+    products[4] = {4, "Standing Desk",     "Furniture",    3, 10,349.99, 2, "SD-004", ts};
+    products[5] = {5, "Monitor Stand",     "Accessories", 28,  8, 34.99, 3, "MS-005", ts};
+    products[6] = {6, "Cable Organizer",   "Accessories",  5, 20,  9.99, 3, "CO-006", ts};
+    next_product_id = 7;
+}
+
+// ─────────────────────────────────────────────
+//  HTTP helpers
+// ─────────────────────────────────────────────
+
+struct Request {
+    std::string method, path, body;
+    std::map<std::string,std::string> params;
+};
+
+std::string http_response(int code, const std::string& body,
+                          const std::string& content_type = "application/json") {
+    std::string reason = (code == 200) ? "OK" :
+                         (code == 201) ? "Created" :
+                         (code == 204) ? "No Content" :
+                         (code == 400) ? "Bad Request" :
+                         (code == 404) ? "Not Found" : "Error";
+    std::string resp = "HTTP/1.1 " + std::to_string(code) + " " + reason + "\r\n"
+        "Content-Type: " + content_type + "\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Content-Length: " + std::to_string(body.size()) + "\r\n"
+        "\r\n" + body;
+    return resp;
+}
+
+// ─────────────────────────────────────────────
+//  Route handlers
+// ─────────────────────────────────────────────
+
+std::string handle_get_products() {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    std::string arr = "[";
+    bool first = true;
+    for (auto& [id, p] : products) {
+        if (!first) arr += ",";
+        arr += product_to_json(p);
+        first = false;
+    }
+    return arr + "]";
+}
+
+std::string handle_get_suppliers() {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    std::string arr = "[";
+    bool first = true;
+    for (auto& [id, s] : suppliers) {
+        if (!first) arr += ",";
+        arr += supplier_to_json(s);
+        first = false;
+    }
+    return arr + "]";
+}
+
+std::string handle_post_product(const std::string& body) {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    Product p;
+    p.id                  = next_product_id++;
+    p.name                = json_get(body, "name");
+    p.category            = json_get(body, "category");
+    p.quantity            = std::stoi(json_get(body, "quantity").empty() ? "0" : json_get(body, "quantity"));
+    p.low_stock_threshold = std::stoi(json_get(body, "low_stock_threshold").empty() ? "5" : json_get(body, "low_stock_threshold"));
+    p.price               = std::stod(json_get(body, "price").empty() ? "0" : json_get(body, "price"));
+    p.supplier_id         = std::stoi(json_get(body, "supplier_id").empty() ? "0" : json_get(body, "supplier_id"));
+    p.sku                 = json_get(body, "sku");
+    p.last_updated        = current_timestamp();
+    products[p.id] = p;
+    return product_to_json(p);
+}
+
+std::string handle_put_product(int id, const std::string& body) {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    if (products.find(id) == products.end()) return "";
+    Product& p = products[id];
+    auto upd = [&](const std::string& key, std::string& field) {
+        auto v = json_get(body, key); if (!v.empty()) field = v;
+    };
+    upd("name", p.name); upd("category", p.category); upd("sku", p.sku);
+    auto qty = json_get(body, "quantity");
+    if (!qty.empty()) p.quantity = std::stoi(qty);
+    auto lst = json_get(body, "low_stock_threshold");
+    if (!lst.empty()) p.low_stock_threshold = std::stoi(lst);
+    auto pr = json_get(body, "price");
+    if (!pr.empty()) p.price = std::stod(pr);
+    auto sid = json_get(body, "supplier_id");
+    if (!sid.empty()) p.supplier_id = std::stoi(sid);
+    p.last_updated = current_timestamp();
+    return product_to_json(p);
+}
+
+bool handle_delete_product(int id) {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    if (products.find(id) == products.end()) return false;
+    products.erase(id);
+    return true;
+}
+
+std::string handle_post_supplier(const std::string& body) {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    Supplier s;
+    s.id      = next_supplier_id++;
+    s.name    = json_get(body, "name");
+    s.contact = json_get(body, "contact");
+    s.email   = json_get(body, "email");
+    suppliers[s.id] = s;
+    return supplier_to_json(s);
+}
+
+std::string handle_get_alerts() {
+    std::lock_guard<std::mutex> lock(store_mutex);
+    std::string arr = "[";
+    bool first = true;
+    for (auto& [id, p] : products) {
+        if (p.quantity <= p.low_stock_threshold) {
+            if (!first) arr += ",";
+            arr += product_to_json(p);
+            first = false;
+        }
+    }
+    return arr + "]";
+}
+
+// ─────────────────────────────────────────────
+//  Request parser & dispatcher
+// ─────────────────────────────────────────────
+
+void handle_client(int client_fd) {
+    char buffer[8192] = {};
+    int bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes <= 0) { close(client_fd); return; }
+
+    std::string raw(buffer, bytes);
+    std::istringstream ss(raw);
+    std::string method, path, version;
+    ss >> method >> path >> version;
+
+    // Read body
+    auto body_pos = raw.find("\r\n\r\n");
+    std::string body = (body_pos != std::string::npos) ? raw.substr(body_pos + 4) : "";
+
+    std::string response;
+
+    // OPTIONS (CORS preflight)
+    if (method == "OPTIONS") {
+        response = http_response(204, "");
+    }
+    // GET /api/products
+    else if (method == "GET" && path == "/api/products") {
+        response = http_response(200, handle_get_products());
+    }
+    // GET /api/suppliers
+    else if (method == "GET" && path == "/api/suppliers") {
+        response = http_response(200, handle_get_suppliers());
+    }
+    // GET /api/alerts
+    else if (method == "GET" && path == "/api/alerts") {
+        response = http_response(200, handle_get_alerts());
+    }
+    // POST /api/products
+    else if (method == "POST" && path == "/api/products") {
+        auto result = handle_post_product(body);
+        response = http_response(201, result);
+    }
+    // POST /api/suppliers
+    else if (method == "POST" && path == "/api/suppliers") {
+        auto result = handle_post_supplier(body);
+        response = http_response(201, result);
+    }
+    // PUT /api/products/:id
+    else if (method == "PUT" && path.rfind("/api/products/", 0) == 0) {
+        int id = std::stoi(path.substr(14));
+        auto result = handle_put_product(id, body);
+        if (result.empty()) response = http_response(404, "{\"error\":\"Not found\"}");
+        else                response = http_response(200, result);
+    }
+    // DELETE /api/products/:id
+    else if (method == "DELETE" && path.rfind("/api/products/", 0) == 0) {
+        int id = std::stoi(path.substr(14));
+        bool ok = handle_delete_product(id);
+        if (ok) response = http_response(200, "{\"message\":\"Deleted\"}");
+        else    response = http_response(404, "{\"error\":\"Not found\"}");
+    }
+    else {
+        response = http_response(404, "{\"error\":\"Route not found\"}");
+    }
+
+    send(client_fd, response.c_str(), response.size(), 0);
+    close(client_fd);
+}
+
+// ─────────────────────────────────────────────
+//  Main
+// ─────────────────────────────────────────────
+
+int main() {
+    seed_data();
+    int port = 8080;
+
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    sockaddr_in addr{};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port        = htons(port);
+
+    bind(server_fd, (sockaddr*)&addr, sizeof(addr));
+    listen(server_fd, 10);
+
+    std::cout << "Inventory Backend running on http://localhost:" << port << std::endl;
+
+    while (true) {
+        int client_fd = accept(server_fd, nullptr, nullptr);
+        if (client_fd < 0) continue;
+        std::thread(handle_client, client_fd).detach();
+    }
+    close(server_fd);
+    return 0;
+}
