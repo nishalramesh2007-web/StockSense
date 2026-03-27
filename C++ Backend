@@ -13,10 +13,6 @@
 #include <thread>
 #include <mutex>
 
-// ─────────────────────────────────────────────
-//  Data Models
-// ─────────────────────────────────────────────
-
 struct Supplier {
     int id;
     std::string name;
@@ -36,9 +32,6 @@ struct Product {
     std::string last_updated;
 };
 
-// ─────────────────────────────────────────────
-//  In-Memory Store
-// ─────────────────────────────────────────────
 
 std::mutex store_mutex;
 std::map<int, Product>  products;
@@ -53,9 +46,6 @@ std::string current_timestamp() {
     return std::string(buf);
 }
 
-// ─────────────────────────────────────────────
-//  JSON helpers  (no external lib)
-// ─────────────────────────────────────────────
 
 std::string escape_json(const std::string& s) {
     std::string out;
@@ -91,7 +81,7 @@ std::string product_to_json(const Product& p) {
            "}";
 }
 
-// Tiny JSON field extractor
+
 std::string json_get(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\":";
     auto pos = json.find(search);
@@ -114,11 +104,6 @@ std::string json_get(const std::string& json, const std::string& key) {
         return val;
     }
 }
-
-// ─────────────────────────────────────────────
-//  Seed data
-// ─────────────────────────────────────────────
-
 void seed_data() {
     Supplier s1{1, "TechSupply Co",   "+1-800-555-0101", "orders@techsupply.com"};
     Supplier s2{2, "GlobalParts Ltd", "+1-800-555-0202", "sales@globalparts.com"};
@@ -135,10 +120,6 @@ void seed_data() {
     products[6] = {6, "Cable Organizer",   "Accessories",  5, 20,  9.99, 3, "CO-006", ts};
     next_product_id = 7;
 }
-
-// ─────────────────────────────────────────────
-//  HTTP helpers
-// ─────────────────────────────────────────────
 
 struct Request {
     std::string method, path, body;
@@ -161,11 +142,6 @@ std::string http_response(int code, const std::string& body,
         "\r\n" + body;
     return resp;
 }
-
-// ─────────────────────────────────────────────
-//  Route handlers
-// ─────────────────────────────────────────────
-
 std::string handle_get_products() {
     std::lock_guard<std::mutex> lock(store_mutex);
     std::string arr = "[";
@@ -272,29 +248,26 @@ void handle_client(int client_fd) {
     std::string method, path, version;
     ss >> method >> path >> version;
 
-    // Read body
     auto body_pos = raw.find("\r\n\r\n");
     std::string body = (body_pos != std::string::npos) ? raw.substr(body_pos + 4) : "";
 
     std::string response;
 
-    // OPTIONS (CORS preflight)
     if (method == "OPTIONS") {
         response = http_response(204, "");
     }
-    // GET /api/products
     else if (method == "GET" && path == "/api/products") {
         response = http_response(200, handle_get_products());
     }
-    // GET /api/suppliers
+  
     else if (method == "GET" && path == "/api/suppliers") {
         response = http_response(200, handle_get_suppliers());
     }
-    // GET /api/alerts
+    
     else if (method == "GET" && path == "/api/alerts") {
         response = http_response(200, handle_get_alerts());
     }
-    // POST /api/products
+    
     else if (method == "POST" && path == "/api/products") {
         auto result = handle_post_product(body);
         response = http_response(201, result);
@@ -304,14 +277,14 @@ void handle_client(int client_fd) {
         auto result = handle_post_supplier(body);
         response = http_response(201, result);
     }
-    // PUT /api/products/:id
+  
     else if (method == "PUT" && path.rfind("/api/products/", 0) == 0) {
         int id = std::stoi(path.substr(14));
         auto result = handle_put_product(id, body);
         if (result.empty()) response = http_response(404, "{\"error\":\"Not found\"}");
         else                response = http_response(200, result);
     }
-    // DELETE /api/products/:id
+    
     else if (method == "DELETE" && path.rfind("/api/products/", 0) == 0) {
         int id = std::stoi(path.substr(14));
         bool ok = handle_delete_product(id);
@@ -326,9 +299,7 @@ void handle_client(int client_fd) {
     close(client_fd);
 }
 
-// ─────────────────────────────────────────────
-//  Main
-// ─────────────────────────────────────────────
+
 
 int main() {
     seed_data();
